@@ -4,7 +4,7 @@ class FilterModule(object):
         return { "lsof_parse" : self.do_parse_lsof }
 
     def do_parse_lsof(self, lsof_raw: list) -> list:
-        return self.__parse_lsof_records(lsof_raw)    
+        return self.__parse_lsof_records(lsof_raw)
 
     @staticmethod
     def __parse_lsof_records(lines: list) -> dict:

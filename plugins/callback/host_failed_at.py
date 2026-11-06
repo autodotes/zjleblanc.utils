@@ -51,7 +51,7 @@ class CallbackModule(CallbackBase):
     def v2_playbook_on_stats(self, stats):
         if not len(self.failed_tasks):
             return
-        
+
         if os.getenv("SMTP_SERVER"):
             self._send_email()
         # Fallback to default display if no SMTP configuration provided
@@ -73,7 +73,7 @@ class CallbackModule(CallbackBase):
         plugin_dir = os.path.dirname(os.path.abspath(__file__))
         with open(plugin_dir + '/host_failed_at_report.html.j2') as tmpl:
             template = Template(tmpl.read())
-        
+
         html = template.render(playbook_name=self.playbook_name, failed_tasks=self.failed_tasks)
 
         msg = MIMEMultipart("alternative")

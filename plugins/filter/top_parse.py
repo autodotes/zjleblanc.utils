@@ -4,7 +4,7 @@ class FilterModule(object):
     return {
       'top_parse': self.do_top_parse
     }
-  
+
   def do_top_parse(self, top_raw: list) -> dict:
     parsed = {"meta": {}, "tasks": []}
     idx = 0
@@ -26,7 +26,7 @@ class FilterModule(object):
 
     parsed["tasks"] = self.__parse_task_data(top_raw[idx:])
     return parsed
-    
+
   # Private helper functions #
   @staticmethod
   def __parse_meta_line(line: str, type: type) -> dict:

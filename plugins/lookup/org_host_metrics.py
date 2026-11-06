@@ -115,9 +115,9 @@ class LookupModule(LookupBase):
 
     # Create our module
     self.module = ControllerAPIModule(
-      argument_spec={}, 
-      direct_params=module_params, 
-      error_callback=self.handle_error, 
+      argument_spec={},
+      direct_params=module_params,
+      error_callback=self.handle_error,
       warn_callback=self.warn_callback
     )
 
@@ -130,18 +130,18 @@ class LookupModule(LookupBase):
     results = []
     for org in organizations:
       results.append(self.__get_org_metrics(org))
-    
+
     return results
-  
+
   def __get_org_metrics(self, org: dict) -> dict:
     inventories = self.__get_all('inventories', {'organization': org['id']})
     hosts = []
     for inv in inventories:
       inv_hosts = self.__get_all('hosts', {'inventory': inv['id']})
       hosts.extend(inv_hosts)
-          
+
     return self.__do_analysis(hosts, org)
-  
+
   def __get_all(self, endpoint: str, query_params=None) -> list:
     response = self.module.get_endpoint(endpoint, data=query_params)
 
@@ -159,11 +159,11 @@ class LookupModule(LookupBase):
         response_data['results'] += next_response['json']['results']
         next_page = next_response['json']['next']
       response_data['next'] = None
-    
+
     return response_data['results']
 
   def __do_analysis(self, hosts: list, org: dict) -> dict:
-    report = { 
+    report = {
       "name": org["name"],
       "id": org["id"],
       "organization": self.__setup_metrics(),
@@ -186,10 +186,10 @@ class LookupModule(LookupBase):
         current_flags = hostnames[host_name]
         incoming_flags = self.__get_host_flags(host)
         report["organization"] = self.__update_host_metrics(report["organization"], current_flags, incoming_flags)
-    
+
     report["inventories"] = self.__dict2items(report["inventories"])
     return report
-  
+
   @staticmethod
   def __setup_metrics() -> dict:
     return {
@@ -198,7 +198,7 @@ class LookupModule(LookupBase):
       "hosts_with_failures": 0,
       "hosts_disabled": 0
     }
-  
+
   @staticmethod
   def __get_host_flags(host) -> HostMetrics:
     automated = host["last_job"] != None
@@ -219,7 +219,7 @@ class LookupModule(LookupBase):
         metrics["hosts_disabled"] += 1
 
       return metrics
-  
+
   @staticmethod
   def __update_host_metrics(metrics: dict, current: HostMetrics, incoming: HostMetrics) -> dict:
       if incoming.automated and not current.automated:
@@ -229,7 +229,7 @@ class LookupModule(LookupBase):
       if incoming.disabled and not current.disabled:
         metrics["hosts_disabled"] += 1
       return metrics
-  
+
   @staticmethod
   def __dict2items(_in: dict, key="id") -> list:
       items = []

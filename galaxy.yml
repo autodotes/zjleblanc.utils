@@ -23,9 +23,15 @@ homepage: https://github.com/zjleblanc/zjleblanc.utils
 issues: https://github.com/zjleblanc/zjleblanc.utils/issues
 
 build_ignore:
-  - .venv
+  - .ansible-lint
+  - .cursor
+  - .github
   - .gitignore
+  - .pre-commit-config.yaml
+  - .venv
+  - .yamllint
   - ansible.cfg
   - collections
   - docs
+  - pyproject.toml
   - tests
