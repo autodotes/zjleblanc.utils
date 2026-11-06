@@ -17,10 +17,10 @@ tags:
 dependencies:
   community.general: ">=5.0.0"
 
-repository: https://github.com/zjleblanc/zjleblanc.utils
-documentation: https://github.com/zjleblanc/zjleblanc.utils/blob/master/README.md
-homepage: https://github.com/zjleblanc/zjleblanc.utils
-issues: https://github.com/zjleblanc/zjleblanc.utils/issues
+repository: https://github.com/autodotes/zjleblanc.utils
+documentation: https://github.com/autodotes/zjleblanc.utils/blob/master/README.md
+homepage: https://github.com/autodotes/zjleblanc.utils
+issues: https://github.com/autodotes/zjleblanc.utils/issues
 
 build_ignore:
   - .ansible-lint

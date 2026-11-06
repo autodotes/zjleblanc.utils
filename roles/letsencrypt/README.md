@@ -3,7 +3,7 @@ zjleblanc.utils.letsencrypt
 
 Generate Let's Encrypt certificates and verify via http-01 or dns-01 challenge. Optionally configure an nginx site.
 
-[Issue Tracker](https://github.com/zjleblanc/zjleblanc.utils/issues)
+[Issue Tracker](https://github.com/autodotes/zjleblanc.utils/issues)
 
 Minimum Ansible Version: 2.1
 

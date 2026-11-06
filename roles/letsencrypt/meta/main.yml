@@ -3,7 +3,7 @@ galaxy_info:
   description: Generate Let's Encrypt certificates and verify via http-01 or dns-01 challenge. Optionally configure an nginx site.
   company: Red Hat
 
-  issue_tracker_url: https://github.com/zjleblanc/zjleblanc.utils/issues
+  issue_tracker_url: https://github.com/autodotes/zjleblanc.utils/issues
 
   license: MIT
 
