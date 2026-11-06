@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- `diagnose_aap_ssh_breakage` playbook, reproducing the disconnected-host RPM install from `download_aap_installer_rpm_deps` on a disposable host and capturing before/after/post-reboot diagnostics (full `dnf` transaction output, history, sshd/SELinux state) to identify why SSH access is lost after install.
 - `download_aap_installer_rpm_deps` playbook, downloading only the base OS RPM dependencies (e.g. `podman`, `ansible-core`, `crun`) required by the [Ansible Automation Platform containerized installer](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.7/install-assembly_aap_containerized_disconnected_installation) via `dnf download --resolve`, and installing them on a disconnected host via `dnf localinstall`.
 - `community.general` collection dependency, required by the new playbook.
 

@@ -1,0 +1,242 @@
+---
+# zjleblanc.utils.diagnose_aap_ssh_breakage
+#
+# Reproduces the RPM install transaction from
+# download_aap_installer_rpm_deps.yml against a disposable test host and
+# captures before/after diagnostics across a reboot, to pinpoint why SSH
+# access is lost afterward (e.g. openssh-server erased by --allowerasing,
+# or the SELinux policy jump blocking sshd).
+#
+# Run this against a FRESH host at the same RHEL minor version as the
+# original disconnected host (e.g. RHEL 9.3) for an accurate reproduction.
+#
+# A systemd oneshot unit captures post-reboot state to a local log file
+# BEFORE Ansible attempts to reconnect, so diagnostic data survives even if
+# SSH itself never comes back. Retrieve that file via an EBS
+# root-volume-rescue mount (attach this host's root volume to another
+# instance) if the playbook can't reconnect after reboot.
+#
+# Requires: {{ playbook_dir }}/fetched_archives/aap-rpm-deps.tar.gz already
+# built by a prior run of download_aap_installer_rpm_deps.yml's connected-
+# host play.
+#
+# Example:
+#   ansible-playbook zjleblanc.utils.diagnose_aap_ssh_breakage --limit <fresh_test_host>
+
+- name: Diagnose AAP installer RPM dependency SSH breakage
+  hosts: rhel_disconnected
+  become: true
+  vars:
+    aap_rpm_dirname: aap-rpm-deps
+    aap_rpm_archive_name: "{{ aap_rpm_dirname }}.tar.gz"
+    aap_rpm_fetch_dir: "{{ playbook_dir }}/fetched_archives"
+    aap_rpm_local_archive_path: >-
+      {{ aap_rpm_fetch_dir }}/{{ aap_rpm_archive_name }}
+    aap_rpm_dest_path: "/opt/{{ aap_rpm_dirname }}"
+    diagnostic_log_path: /var/log/aap-ssh-diagnostics.log
+    # Keep in sync with download_aap_installer_rpm_deps.yml's package list.
+    aap_installer_packages:
+      - ansible-core
+      - podman
+      - netavark
+      - passt
+      - passt-selinux
+      - conmon
+      - containers-common
+      - crun
+      - slirp4netns
+      - fuse-overlayfs
+      - polkit
+      - gzip
+      - rsync
+      - container-selinux
+      - selinux-policy
+      - selinux-policy-targeted
+      - python3-firewall
+
+  tasks:
+    - name: Snapshot pre-install sshd/SELinux/network state  # noqa command-instead-of-module
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo "== pre-install =="
+        date
+        rpm -q openssh-server openssh || true
+        systemctl is-active sshd || true
+        systemctl is-enabled sshd || true
+        getenforce
+        ss -tlnp | grep ':22 ' || true
+      args:
+        executable: /bin/bash
+      register: pre_install_snapshot
+      changed_when: false
+
+    - name: Show pre-install snapshot
+      ansible.builtin.debug:
+        var: pre_install_snapshot.stdout_lines
+
+    - name: Ensure destination parent directory exists
+      ansible.builtin.file:
+        path: "{{ aap_rpm_dest_path | dirname }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy and extract the RPM archive
+      ansible.builtin.unarchive:
+        src: "{{ aap_rpm_local_archive_path }}"
+        dest: "{{ aap_rpm_dest_path | dirname }}"
+        remote_src: false
+
+    - name: Create temporary local DNF repository
+      # Points dnf at the extracted RPM directory (which ships with repodata/
+      # generated on the connected host) so dnf install can resolve deps
+      # without touching any packages outside aap_installer_packages.
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/aap-local-deps.repo
+        content: |
+          [aap-local-deps]
+          name=AAP Local RPM Dependencies
+          baseurl=file://{{ aap_rpm_dest_path }}
+          enabled=1
+          gpgcheck=0
+        mode: '0644'
+
+    - name: Run the installer transaction and capture its FULL output  # noqa command-instead-of-module
+      # This is the exact command from download_aap_installer_rpm_deps.yml's
+      # disconnected-host install task. failed_when: false so we capture and
+      # inspect the output below even if the transaction itself errors.
+      ansible.builtin.command:
+        cmd: >-
+          dnf install -y
+          --disablerepo=*
+          --enablerepo=aap-local-deps
+          --best --allowerasing
+          {{ aap_installer_packages | join(' ') }}
+      register: aap_rpm_install
+      changed_when: "'Nothing to do' not in aap_rpm_install.stdout"
+      failed_when: false
+
+    - name: Show the FULL dnf install transaction output
+      # This is the critical piece that was hidden in the original run (it
+      # only showed "changed: [host]"). Any "Erasing:" or "Removing:" lines
+      # here -- especially for openssh-server -- are the smoking gun for
+      # --allowerasing having removed something it shouldn't have.
+      ansible.builtin.debug:
+        var: aap_rpm_install.stdout_lines
+
+    - name: Capture dnf history for this transaction  # noqa command-instead-of-module
+      ansible.builtin.shell: |
+        set -o pipefail
+        id=$(dnf history list | awk 'NR==3{print $1}')
+        dnf history info "${id}"
+      args:
+        executable: /bin/bash
+      register: dnf_history
+      changed_when: false
+
+    - name: Show dnf history -- look for "Erase"/"Removed" lines here
+      ansible.builtin.debug:
+        var: dnf_history.stdout_lines
+
+    - name: Remove the temporary local DNF repository
+      ansible.builtin.file:
+        path: /etc/yum.repos.d/aap-local-deps.repo
+        state: absent
+
+    - name: Snapshot post-install, pre-reboot sshd/SELinux/network state  # noqa command-instead-of-module
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo "== post-install, pre-reboot =="
+        date
+        rpm -q openssh-server openssh || true
+        systemctl is-active sshd || true
+        systemctl is-enabled sshd || true
+        getenforce
+        ss -tlnp | grep ':22 ' || true
+        test -f /.autorelabel && echo "AUTORELABEL PENDING" || echo "no pending relabel"
+      args:
+        executable: /bin/bash
+      register: post_install_snapshot
+      changed_when: false
+
+    - name: Show post-install, pre-reboot snapshot
+      ansible.builtin.debug:
+        var: post_install_snapshot.stdout_lines
+
+    - name: Install the post-reboot diagnostics capture script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/aap-ssh-diagnostics-capture.sh
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          {
+            echo "== post-reboot =="
+            date
+            rpm -q openssh-server openssh
+            systemctl is-active sshd
+            systemctl is-enabled sshd
+            getenforce
+            ss -tlnp | grep ':22 '
+            journalctl -b -u sshd --no-pager | tail -100
+            journalctl -b --no-pager | grep -iE "avc|denied" | tail -200
+          } > {{ diagnostic_log_path }} 2>&1
+
+    - name: Install a one-shot unit to capture post-reboot state to disk
+      # Runs before sshd starts (Before=sshd.service, DefaultDependencies=no)
+      # so the diagnostic data is written to disk regardless of whether sshd
+      # actually comes up. This is what you retrieve via an EBS rescue mount
+      # if the playbook can't reconnect after the reboot below.
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/aap-ssh-diagnostics.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Capture AAP installer SSH diagnostics on boot
+          DefaultDependencies=no
+          After=local-fs.target
+          Before=sshd.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/aap-ssh-diagnostics-capture.sh
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable the diagnostics unit
+      ansible.builtin.systemd:
+        name: aap-ssh-diagnostics.service
+        enabled: true
+        daemon_reload: true
+
+    - name: Reboot to reproduce the failure condition
+      ansible.builtin.reboot:
+        reboot_timeout: 180
+        connect_timeout: 20
+        post_reboot_delay: 10
+      register: reboot_result
+      ignore_errors: true
+
+    - name: Report whether SSH survived the reboot
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'SSH SURVIVED the reboot -- fetching post-reboot diagnostics now.'
+            if reboot_result is succeeded else
+            'SSH DID NOT COME BACK after reboot -- this reproduces the production issue. '
+            + 'Retrieve ' + diagnostic_log_path + ' via an EBS root-volume-rescue mount '
+            + '(attach this host\'s root volume to another instance) to see exactly '
+            + 'what happened at boot.'
+          }}
+
+    - name: Fetch and show the post-reboot diagnostic log (only if SSH survived)
+      when: reboot_result is succeeded
+      block:
+        - name: Read the post-reboot diagnostic log
+          ansible.builtin.slurp:
+            src: "{{ diagnostic_log_path }}"
+          register: post_reboot_log
+
+        - name: Show post-reboot diagnostics
+          ansible.builtin.debug:
+            msg: "{{ (post_reboot_log.content | b64decode).split('\n') }}"
